@@ -155,12 +155,38 @@ const registerAdmin = async (req, res) => {
   }
 };
 
-// User Login (OTP Based)
+// User Login (Token/OTP Based)
 const loginUser = async (req, res) => {
   try {
-    const { phoneNumber } = req.body;
+    const { phoneNumber, token } = req.body;
     
-    // Check if user exists
+    // First try token-based login
+    if (token) {
+      try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findOne({ 
+          _id: decoded.id, 
+          phoneNumber: decoded.phoneNumber,
+          role: 'user' 
+        });
+        
+        if (user) {
+          return res.json({
+            token,
+            user: {
+              id: user._id,
+              name: user.name,
+              phoneNumber: user.phoneNumber,
+              role: user.role
+            }
+          });
+        }
+      } catch (err) {
+        // Token invalid or expired - continue with OTP flow
+      }
+    }
+
+    // Fallback to OTP-based login
     const user = await User.findOne({ phoneNumber, role: 'user' });
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
