@@ -1,2 +1,20 @@
 node_modules
 
+.env
+
+# Firebase
+config/firebase-service-account.json
+*.service-account.json
+firebase-adminsdk.json
+
+# Environment files
+.env*
+*.env
+.env.local
+.env.development
+.env.production
+
+# Other sensitive files
+*.pem
+*.key
+credentials.json
