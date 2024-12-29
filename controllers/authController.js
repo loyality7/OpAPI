@@ -42,6 +42,11 @@ const registerUser = async (req, res) => {
     const verificationId = `ver_${Math.random().toString(36).substr(2, 9)}`;
     const otp = generateOTP();
     
+    console.log('=== New User Registration ===');
+    console.log('Verification ID:', verificationId);
+    console.log('OTP:', otp);
+    console.log('User Data:', { name, phoneNumber, email });
+    
     global.verificationStore = global.verificationStore || {};
     global.verificationStore[verificationId] = {
       otp,
@@ -165,6 +170,11 @@ const loginUser = async (req, res) => {
     const verificationId = `ver_${Math.random().toString(36).substr(2, 9)}`;
     const otp = generateOTP();
     
+    console.log('=== User Login Attempt ===');
+    console.log('Verification ID:', verificationId);
+    console.log('OTP:', otp);
+    console.log('Phone Number:', phoneNumber);
+    
     global.verificationStore = global.verificationStore || {};
     global.verificationStore[verificationId] = {
       otp,
@@ -261,7 +271,12 @@ const loginAdmin = async (req, res) => {
 const verifyOTP = async (req, res) => {
   try {
     const { verificationId, otp } = req.body;
-
+    
+    console.log('=== OTP Verification Attempt ===');
+    console.log('Verification ID:', verificationId);
+    console.log('Submitted OTP:', otp);
+    console.log('Stored Verification Data:', global.verificationStore[verificationId]);
+    
     // Check if verification ID exists
     if (!global.verificationStore || !global.verificationStore[verificationId]) {
       return res.status(400).json({ message: 'Invalid verification ID' });
