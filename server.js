@@ -92,7 +92,7 @@ const swaggerOptions = {
     },
     servers: [
       {
-        url: process.env.NODE_ENV === 'production' 
+        url: process.env.NODE_ENV === 'development' 
           ? 'https://opapi.cyberbabu.tech' 
           : `http://localhost:${process.env.PORT || 5000}`,
       },
