@@ -25,10 +25,15 @@ const generateOTP = () => {
 // User Registration (OTP Based)
 const registerUser = async (req, res) => {
   try {
-    const { name, phoneNumber } = req.body;
+    const { name, phoneNumber, email } = req.body;
     
-    // Check if user exists
-    const existingUser = await User.findOne({ phoneNumber });
+    // Check if user exists (check both phone and email)
+    const existingUser = await User.findOne({ 
+      $or: [
+        { phoneNumber },
+        { email }
+      ]
+    });
     if (existingUser) {
       return res.status(400).json({ message: 'User already exists' });
     }
@@ -40,7 +45,7 @@ const registerUser = async (req, res) => {
     global.verificationStore = global.verificationStore || {};
     global.verificationStore[verificationId] = {
       otp,
-      userData: { name, phoneNumber, role: 'user' },
+      userData: { name, phoneNumber, email, role: 'user' },
       isLogin: false,
       createdAt: Date.now()
     };

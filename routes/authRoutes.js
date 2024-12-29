@@ -56,6 +56,7 @@ const {
  *             required:
  *               - name
  *               - phoneNumber
+ *               - email
  *             properties:
  *               name:
  *                 type: string
@@ -63,6 +64,10 @@ const {
  *               phoneNumber:
  *                 type: string
  *                 example: "+919876543210"
+ *               email:
+ *                 type: string
+ *                 format: email
+ *                 example: "john@example.com"
  *     responses:
  *       200:
  *         description: OTP sent successfully
