@@ -7,9 +7,25 @@ const swaggerUI = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
 const connectDB = require('./config/db');
 require('dotenv').config();
-console.log('RAZORPAY_KEY_ID:', process.env.RAZORPAY_KEY_ID);
 
 const app = express();
+
+// CORS Configuration
+const corsOptions = {
+  origin: [
+    'http://opapi.cyberbabu.tech',
+    'https://opapi.cyberbabu.tech',
+    'http://localhost:3000',
+    'http://localhost:5000'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-auth-token'],
+  credentials: true,
+  optionsSuccessStatus: 200
+};
+
+// Apply CORS before other middleware
+app.use(cors(corsOptions));
 
 // Connect to Database
 connectDB();
@@ -21,13 +37,17 @@ app.use(session({
   saveUninitialized: false,
   cookie: {
     secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000 // 24 hours
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    domain: process.env.NODE_ENV === 'production' ? '.cyberbabu.tech' : undefined
   }
 }));
 
 // Enhanced Security Middleware
-app.use(helmet());
-app.use(cors());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" }
+}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -72,14 +92,14 @@ const swaggerOptions = {
     },
     servers: [
       {
-        // url: `http://localhost:${process.env.PORT || 5000}`,
-        url: `https://opapi.cyberbabu.tech`,
-
+        url: process.env.NODE_ENV === 'production' 
+          ? 'https://opapi.cyberbabu.tech' 
+          : `http://localhost:${process.env.PORT || 5000}`,
       },
     ],
     components: {
       securitySchemes: {
-        bearerAuth: {
+        BearerAuth: {
           type: 'http',
           scheme: 'bearer',
           bearerFormat: 'JWT',
@@ -87,7 +107,7 @@ const swaggerOptions = {
       },
     },
     security: [{
-      bearerAuth: [],
+      BearerAuth: [],
     }],
   },
   apis: ['./routes/*.js'],
