@@ -7,7 +7,9 @@ const {
   getUserBookings,
   getHospitalBookings,
   updateBookingStatus,
-  downloadBooking
+  downloadBooking,
+  updateCodPaymentStatus,
+  cancelBooking
 } = require('../controllers/bookingController');
 
 /**
@@ -76,9 +78,11 @@ const {
  *                 type: string
  *               appointmentDate:
  *                 type: string
- *                 format: date-time
+ *                 format: date
  *               timeSlot:
  *                 type: string
+ *                 description: Time in 12-hour format (e.g., "9:30 AM", "2:30 PM")
+ *                 example: "9:30 AM"
  *               symptoms:
  *                 type: string
  *               specialization:
@@ -294,5 +298,81 @@ router.get('/admin/bookings', auth, checkRole(['admin']), async (req, res) => {
     res.status(500).json({ message: error.message });
   }
 });
+
+/**
+ * @swagger
+ * /api/admin/bookings/{bookingId}/cod-payment:
+ *   put:
+ *     summary: Update COD payment status (Admin only)
+ *     tags: [Bookings]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: bookingId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Booking ID
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - paymentStatus
+ *             properties:
+ *               paymentStatus:
+ *                 type: string
+ *                 enum: [completed, failed]
+ *                 description: Payment status for COD booking
+ *               remarks:
+ *                 type: string
+ *                 description: Optional remarks about the payment
+ *           example:
+ *             paymentStatus: "completed"
+ *             remarks: "Payment collected at hospital"
+ *     responses:
+ *       200:
+ *         description: COD payment status updated successfully
+ *       400:
+ *         description: Invalid request or booking is not COD
+ *       404:
+ *         description: Booking not found
+ *       403:
+ *         description: Not authorized - Admin only
+ */
+router.put(
+  '/admin/bookings/:bookingId/cod-payment',
+  auth,
+  checkRole(['admin']),
+  updateCodPaymentStatus
+);
+
+/**
+ * @swagger
+ * /api/bookings/{id}/cancel:
+ *   post:
+ *     summary: Cancel a booking
+ *     tags: [Bookings]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Booking ID
+ *     responses:
+ *       200:
+ *         description: Booking cancelled successfully
+ *       400:
+ *         description: Cannot cancel booking in current status
+ *       404:
+ *         description: Booking not found
+ */
+router.post('/bookings/:id/cancel', auth, checkRole(['user']), cancelBooking);
 
 module.exports = router;

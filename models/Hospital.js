@@ -159,6 +159,18 @@ const hospitalSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  slotSettings: {
+    patientsPerSlot: {
+      type: Number,
+      default: 1,
+      min: 1
+    },
+    slotDuration: {
+      type: Number,
+      enum: [15, 30, 45, 60],
+      default: 30
+    }
+  },
 }, {
   timestamps: true
 });
@@ -166,25 +178,32 @@ const hospitalSchema = new mongoose.Schema({
 // Add geospatial index for location-based queries
 hospitalSchema.index({ location: '2dsphere' });
 
-// Virtual for doctor count
+// Virtual for doctor count - Fix the error
 hospitalSchema.virtual('doctorCount').get(function() {
-  return this.doctors.length;
+  return this.doctors ? this.doctors.length : 0;  // Add null check
 });
 
 // Ensure virtuals are included when converting to JSON
-hospitalSchema.set('toJSON', { virtuals: true });
+hospitalSchema.set('toJSON', { 
+  virtuals: true,
+  transform: function(doc, ret) {
+    // Ensure doctors array exists
+    if (!ret.doctors) {
+      ret.doctors = [];
+    }
+    return ret;
+  }
+});
 
 hospitalSchema.methods.calculateFees = function() {
-  const basePrice = this.opBookingPrice;
-  const platformFee = Math.round(basePrice * 0.10); // 10% platform fee
-  const subtotal = basePrice + platformFee;
-  const gst = Math.round(subtotal * 0.18); // 18% GST
-  const totalAmount = subtotal + gst;
+  const basePrice = this.opBookingPrice || 0;  // Add default value
+  const platformFee = 9; // Flat 9 rupees platform fee
+  const gst = Math.round(platformFee * 0.18); // 18% GST only on platform fee
+  const totalAmount = basePrice + platformFee + gst;
 
   return {
     basePrice,
     platformFee,
-    subtotal,
     gst,
     totalAmount
   };

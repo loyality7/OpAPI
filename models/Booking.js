@@ -8,20 +8,38 @@ const bookingSchema = new mongoose.Schema({
   },
   hospital: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
+    ref: 'Hospital',
     required: true
   },
   appointmentDate: {
     type: Date,
-    required: true
+    required: true,
+    validate: {
+      validator: function(value) {
+        // Ensure date is not in the past
+        return value >= new Date().setHours(0, 0, 0, 0);
+      },
+      message: 'Appointment date cannot be in the past'
+    }
+  },
+  timeSlot: {
+    type: String,
+    required: true,
+    validate: {
+      validator: function(value) {
+        // Validate time format (e.g., "09:30 AM", "02:30 PM")
+        return /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/.test(value);
+      },
+      message: 'Time slot must be in format "HH:MM AM/PM" (e.g., "09:30 AM")'
+    }
   },
   tokenNumber: {
-    type: Number
+    type: String
   },
   status: {
     type: String,
-    enum: ['upcoming', 'completed', 'canceled'],
-    default: 'upcoming'
+    enum: ['pending', 'confirmed', 'rejected', 'cancelled', 'completed'],
+    default: 'pending'
   },
   payment: {
     orderId: String,
@@ -80,11 +98,11 @@ const bookingSchema = new mongoose.Schema({
   },
   doctorName: {
     type: String,
-    required: true
+    required: false
   },
   specialty: {
     type: String,
-    required: true
+    required: false
   },
   prescriptions: [{
     medicine: {
@@ -111,6 +129,11 @@ const bookingSchema = new mongoose.Schema({
     paymentMode: {
       type: String
     }
+  },
+  doctorAssigned: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Doctor',
+    required: false
   }
 }, {
   timestamps: true
@@ -119,6 +142,46 @@ const bookingSchema = new mongoose.Schema({
 // Index for querying bookings efficiently
 bookingSchema.index({ hospital: 1, appointmentDate: 1 });
 bookingSchema.index({ user: 1, status: 1 });
+
+// Add this before creating the model
+bookingSchema.pre('save', async function(next) {
+  try {
+    if (!this.tokenNumber) {
+      // Get the hospital details
+      await this.populate('hospital', 'name');
+      
+      if (!this.hospital) {
+        throw new Error('Hospital not found');
+      }
+
+      // Get hospital prefix (first 3 letters uppercase)
+      const hospitalPrefix = this.hospital.name.substring(0, 3).toUpperCase();
+      
+      // Find bookings for the same hospital and date
+      const startOfDay = new Date(this.appointmentDate);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(this.appointmentDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const sameDayBookings = await this.constructor.find({
+        hospital: this.hospital._id,
+        appointmentDate: {
+          $gte: startOfDay,
+          $lt: endOfDay
+        }
+      }).sort('createdAt');
+
+      // Calculate sequential number
+      const sequentialNumber = sameDayBookings.length + 1;
+      
+      // Set token number
+      this.tokenNumber = `${hospitalPrefix}${sequentialNumber.toString().padStart(3, '0')}`;
+    }
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 const Booking = mongoose.model('Booking', bookingSchema);
 

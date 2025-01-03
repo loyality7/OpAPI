@@ -7,6 +7,7 @@ const swaggerUI = require('swagger-ui-express');
 const swaggerJsDoc = require('swagger-jsdoc');
 const connectDB = require('./config/db');
 require('dotenv').config();
+require('./services/schedulerService');
 
 const app = express();
 
@@ -80,6 +81,8 @@ app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api', require('./routes/hospitalRoutes'));
 app.use('/api', require('./routes/bookingRoutes'));
 app.use('/api/admin', require('./routes/adminRoutes'));
+app.use('/api', require('./routes/notificationRoutes'));
+app.use('/api/user', require('./routes/userRoutes'));
 
 // Swagger Documentation
 const swaggerOptions = {
@@ -103,14 +106,14 @@ const swaggerOptions = {
     components: {
       securitySchemes: {
         BearerAuth: {
-          type: ['http', 'https'],
+          type: 'http',
           scheme: 'bearer',
-          bearerFormat: 'JWT',
+          bearerFormat: 'JWT'
         },
       },
     },
     security: [{
-      BearerAuth: [],
+      BearerAuth: []
     }],
   },
   apis: ['./routes/*.js'],
