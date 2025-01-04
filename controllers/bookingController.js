@@ -513,15 +513,19 @@ const cancelBooking = async (req, res) => {
     const booking = await Booking.findOne({
       _id: req.params.id,
       user: req.user.id
-    });
+    }).populate('hospital');
 
     if (!booking) {
-      return res.status(404).json({ message: 'Booking not found' });
+      return res.status(404).json({ 
+        success: false,
+        message: 'Booking not found' 
+      });
     }
 
     // Only allow cancellation of pending or confirmed bookings
     if (!['pending', 'confirmed'].includes(booking.status)) {
       return res.status(400).json({ 
+        success: false,
         message: 'Cannot cancel booking in current status' 
       });
     }
@@ -529,16 +533,15 @@ const cancelBooking = async (req, res) => {
     // If payment was made online and completed, initiate refund process
     if (booking.payment.method === 'online' && booking.payment.status === 'completed') {
       try {
-        // Initiate refund through Razorpay
         await razorpay.payments.refund(booking.payment.paymentId, {
-          amount: booking.payment.amount * 100, // Amount in paise
+          amount: booking.payment.amount * 100,
           speed: 'normal'
         });
-        
         booking.payment.status = 'refunded';
       } catch (refundError) {
         console.error('Refund failed:', refundError);
         return res.status(500).json({ 
+          success: false,
           message: 'Unable to process refund. Please contact support.' 
         });
       }
@@ -548,13 +551,26 @@ const cancelBooking = async (req, res) => {
     booking.cancelledAt = new Date();
     await booking.save();
 
+    // Create notifications for both user and hospital
+    await NotificationService.createBookingNotifications(booking, 'BOOKING_CANCELLED', {
+      bookingId: booking._id,
+      hospitalName: booking.hospital.name,
+      appointmentDate: booking.appointmentDate,
+      timeSlot: booking.timeSlot,
+      patientName: booking.patientDetails.name
+    });
+
     res.json({
+      success: true,
       message: 'Booking cancelled successfully',
       booking
     });
   } catch (error) {
     console.error('Error cancelling booking:', error);
-    res.status(500).json({ message: error.message });
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
   }
 };
 

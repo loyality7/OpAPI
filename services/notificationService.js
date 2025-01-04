@@ -50,11 +50,11 @@ class NotificationService {
       BOOKING_CANCELLED: {
         user: {
           title: 'Booking Cancelled',
-          message: `Your booking with ${booking.hospital.name} has been cancelled`
+          message: 'Your booking at {{hospitalName}} for {{appointmentDate}} {{timeSlot}} has been cancelled.'
         },
         hospital: {
           title: 'Booking Cancelled',
-          message: `Booking for ${booking.patientDetails.name} on ${new Date(booking.appointmentDate).toLocaleDateString()} has been cancelled`
+          message: 'Booking for {{patientName}} on {{appointmentDate}} {{timeSlot}} has been cancelled.'
         }
       },
       BOOKING_COMPLETED: {
