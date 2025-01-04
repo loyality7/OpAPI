@@ -1591,6 +1591,7 @@ const getHospitalReports = async (req, res) => {
           },
           pending: {
             $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
+          }
         }
       },
       { $sort: { _id: 1 } }
