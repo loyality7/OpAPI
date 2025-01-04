@@ -8,11 +8,10 @@ const Hospital = require('../models/Hospital');
 const generateToken = (user) => {
   return jwt.sign(
     { 
-      id: user.id,
-      role: user.role,
+      id: user._id, 
+      role: user.role, 
       email: user.email,
-      phoneNumber: user.phoneNumber,
-      isLoggedIn: true
+      phoneNumber: user.phoneNumber 
     },
     process.env.JWT_SECRET,
     { expiresIn: '365d' }
