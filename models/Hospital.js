@@ -1,5 +1,8 @@
 const mongoose = require('mongoose');
 
+const PLATFORM_FEE = 30;  // Fixed platform fee in rupees
+const GST_RATE = 0.18;    // 18% GST
+
 const timingSchema = new mongoose.Schema({
   day: {
     type: String,
@@ -202,8 +205,8 @@ hospitalSchema.set('toJSON', {
 
 hospitalSchema.methods.calculateFees = function() {
   const basePrice = this.opBookingPrice || 0;  // Add default value
-  const platformFee = 9; // Flat 9 rupees platform fee
-  const gst = Math.round(platformFee * 0.18); // 18% GST only on platform fee
+  const platformFee = PLATFORM_FEE;
+  const gst = Math.round(platformFee * GST_RATE);  // GST on platform fee
   const totalAmount = basePrice + platformFee + gst;
 
   return {
