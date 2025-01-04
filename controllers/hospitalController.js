@@ -213,7 +213,7 @@ const getHospitalBookings = async (req, res) => {
       date: booking.appointmentDate.toISOString().split('T')[0],
       status: booking.status,
       contactNumber: booking.patientDetails.mobile,
-      fee: booking.payment.breakdown.total,
+      fee: booking.payment.breakdown.basePrice,
       symptoms: booking.symptoms,
       priority: booking.priority || 'normal',
       user: {
@@ -224,7 +224,10 @@ const getHospitalBookings = async (req, res) => {
       payment: {
         status: booking.payment.status,
         method: booking.payment.method,
-        details: booking.payment.breakdown
+        details: {
+          ...booking.payment.breakdown,
+          amount: booking.payment.breakdown.basePrice
+        }
       }
     }));
 
@@ -1251,9 +1254,12 @@ const getBookingDetails = async (req, res) => {
       priority: booking.priority || 'normal',
       payment: {
         status: booking.payment.status,
-        amount: booking.payment.amount,
+        amount: booking.payment.breakdown.basePrice,
         method: booking.payment.method,
-        breakdown: booking.payment.breakdown
+        breakdown: {
+          ...booking.payment.breakdown,
+          amount: booking.payment.breakdown.basePrice
+        }
       },
       user: {
         name: booking.user?.name,
@@ -1824,7 +1830,7 @@ const getHospitalPatients = async (req, res) => {
       },
       payment: {
         status: booking.payment.status,
-        amount: booking.payment.amount
+        amount: booking.payment.breakdown.basePrice
       }
     });
 
@@ -1965,7 +1971,7 @@ const getPaymentStats = async (req, res) => {
     const formattedPayments = recentPayments.map(booking => ({
       id: booking._id,
       patientName: booking.patientDetails?.name || 'N/A',
-      amount: booking.payment?.amount || 0,
+      amount: booking.payment?.breakdown?.basePrice || 0,
       date: new Date(booking.createdAt).toISOString().split('T')[0],
       method: booking.payment?.method || 'N/A',
       status: booking.payment?.status || 'N/A',
