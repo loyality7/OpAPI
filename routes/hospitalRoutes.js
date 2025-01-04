@@ -309,6 +309,21 @@ router.get('/hospitals', getHospitals);
  *                 type: object
  *               operationalDetails:
  *                 type: object
+ *                 properties:
+ *                   isOpen:
+ *                     type: boolean
+ *                   opBookingPrice:
+ *                     type: number
+ *                   maxOpBookingsPerDay:
+ *                     type: number
+ *                   timings:
+ *                     type: array
+ *                   slotSettings:
+ *                     type: object
+ *                     properties:
+ *                       patientsPerSlot:
+ *                         type: number
+ *                         minimum: 1
  *               medicalServices:
  *                 type: object
  *               facilities:
@@ -327,13 +342,48 @@ router.put('/hospitals/updateprofile', auth, checkRole(['hospital']), updateHosp
  * @swagger
  * /api/hospitals/profile:
  *   get:
- *     summary: Get logged-in hospital's profile
+ *     summary: Get logged-in hospital's complete profile
  *     tags: [Hospitals]
  *     security:
  *       - BearerAuth: []
  *     responses:
  *       200:
  *         description: Hospital profile retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 basicInfo:
+ *                   type: object
+ *                 address:
+ *                   type: object
+ *                 operationalDetails:
+ *                   type: object
+ *                   properties:
+ *                     isOpen:
+ *                       type: boolean
+ *                     opBookingPrice:
+ *                       type: number
+ *                     maxOpBookingsPerDay:
+ *                       type: number
+ *                     timings:
+ *                       type: array
+ *                     slotSettings:
+ *                       type: object
+ *                       properties:
+ *                         patientsPerSlot:
+ *                           type: number
+ *                         totalSlotsPerDay:
+ *                           type: number
+ *                 medicalServices:
+ *                   type: object
+ *                 facilities:
+ *                   type: object
+ *                 stats:
+ *                   type: object
+ *       404:
+ *         description: Hospital not found
  */
 router.get('/hospitals/profile', auth, checkRole(['hospital']), getOwnHospitalProfile);
 
@@ -1025,6 +1075,22 @@ router.get('/hospitals/:id/profile', auth, checkRole(['admin']), getHospitalProf
  *                   type: object
  *                 operationalDetails:
  *                   type: object
+ *                   properties:
+ *                     isOpen:
+ *                       type: boolean
+ *                     opBookingPrice:
+ *                       type: number
+ *                     maxOpBookingsPerDay:
+ *                       type: number
+ *                     timings:
+ *                       type: array
+ *                     slotSettings:
+ *                       type: object
+ *                       properties:
+ *                         patientsPerSlot:
+ *                           type: number
+ *                         totalSlotsPerDay:
+ *                           type: number
  *                 medicalServices:
  *                   type: object
  *                 facilities:
@@ -1057,6 +1123,21 @@ router.get('/hospitals/profile', auth, checkRole(['hospital']), getOwnHospitalPr
  *                 type: object
  *               operationalDetails:
  *                 type: object
+ *                 properties:
+ *                   isOpen:
+ *                     type: boolean
+ *                   opBookingPrice:
+ *                     type: number
+ *                   maxOpBookingsPerDay:
+ *                     type: number
+ *                   timings:
+ *                     type: array
+ *                   slotSettings:
+ *                     type: object
+ *                     properties:
+ *                       patientsPerSlot:
+ *                         type: number
+ *                         minimum: 1
  *               medicalServices:
  *                 type: object
  *               facilities:

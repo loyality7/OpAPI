@@ -1,6 +1,7 @@
 const Hospital = require('../models/Hospital');
 const Booking = require('../models/Booking');
 const NotificationService = require('../services/notificationService');
+const moment = require('moment');
 
 const createHospital = async (req, res) => {
   try {
@@ -767,9 +768,9 @@ const updateHospitalSettings = async (req, res) => {
 
 const updateHospitalActiveStatus = async (req, res) => {
   try {
+    // First find the hospital using createdBy
     const hospital = await Hospital.findOne({
-      _id: req.params.id,
-      createdBy: req.user.id
+      createdBy: req.user.id  // Use createdBy instead of _id
     });
 
     if (!hospital) {
@@ -885,7 +886,11 @@ const getHospitalProfile = async (req, res) => {
         isOpen: hospital.isOpen,
         opBookingPrice: hospital.opBookingPrice,
         maxOpBookingsPerDay: hospital.maxOpBookingsPerDay,
-        timings: hospital.timings
+        timings: hospital.timings,
+        slotSettings: {
+          patientsPerSlot: hospital.patientsPerSlot || 1,
+          totalSlotsPerDay: calculateTotalSlots(hospital.timings)
+        }
       },
       medicalServices: {
         categories: hospital.categories,
@@ -934,43 +939,52 @@ const getOwnHospitalProfile = async (req, res) => {
     const hospital = await Hospital.findOne({ createdBy: req.user.id })
       .populate('createdBy', 'email role')
       .populate('updatedBy', 'email role')
-      .populate('approvedBy', 'email role');
+      .populate('approvedBy', 'email role')
+      .lean();
     
     if (!hospital) {
       return res.status(404).json({ message: 'Hospital not found' });
     }
 
-    // Get today's date range
+    // Calculate total slots per day based on timings
+    const calculateTotalSlots = (timings) => {
+      if (!timings || !timings.length) return 0;
+      
+      const slotsPerDay = timings.map(timing => {
+        if (!timing.isOpen) return 0;
+        const start = moment(timing.openTime, 'HH:mm');
+        const end = moment(timing.closeTime, 'HH:mm');
+        const duration = moment.duration(end.diff(start));
+        return Math.floor(duration.asMinutes() / 30);
+      });
+
+      return Math.max(...slotsPerDay);
+    };
+
+    // Calculate slots with patients per slot for each timing
+    const timingsWithSlots = hospital.timings.map(timing => ({
+      ...timing,
+      maxPatientsPerSlot: hospital.patientsPerSlot || 1
+    }));
+
+    const totalSlotsPerDay = calculateTotalSlots(hospital.timings);
+
+    // Get today's bookings count
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
-    // Get bookings stats
-    const [totalBookings, todayBookings, totalRevenue] = await Promise.all([
-      Booking.countDocuments({ hospital: hospital._id }),
-      Booking.countDocuments({
-        hospital: hospital._id,
-        appointmentDate: { $gte: today, $lt: tomorrow }
-      }),
-      Booking.aggregate([
-        {
-          $match: {
-            hospital: hospital._id,
-            'payment.status': 'completed'
-          }
-        },
-        {
-          $group: {
-            _id: null,
-            total: { $sum: '$payment.amount' }
-          }
-        }
-      ])
-    ]);
+    const todayBookings = await Booking.countDocuments({
+      hospital: hospital._id,
+      appointmentDate: {
+        $gte: today,
+        $lt: tomorrow
+      },
+      status: { $in: ['confirmed', 'pending'] }
+    });
 
-    // Format the response
-    const hospitalProfile = {
+    const response = {
       basicInfo: {
         name: hospital.name,
         email: hospital.email,
@@ -985,40 +999,71 @@ const getOwnHospitalProfile = async (req, res) => {
         isOpen: hospital.isOpen,
         opBookingPrice: hospital.opBookingPrice,
         maxOpBookingsPerDay: hospital.maxOpBookingsPerDay,
-        timings: hospital.timings
+        timings: timingsWithSlots,
+        slotSettings: {
+          patientsPerSlot: hospital.patientsPerSlot || 1,
+          totalSlotsPerDay: totalSlotsPerDay,
+          maxPatientsPerDay: totalSlotsPerDay * (hospital.patientsPerSlot || 1),
+          totalCapacityPerSlot: hospital.patientsPerSlot || 1
+        }
       },
       medicalServices: {
-        categories: hospital.categories,
-        doctors: hospital.doctors
+        categories: hospital.categories.map(cat => ({
+          ...cat,
+          id: cat._id
+        })),
+        doctors: hospital.doctors.map(doc => ({
+          ...doc,
+          id: doc._id
+        }))
       },
       facilities: {
-        amenities: hospital.amenities,
+        amenities: hospital.amenities.map(amenity => ({
+          ...amenity,
+          id: amenity._id
+        })),
         images: hospital.images
       },
-      ratings: hospital.ratings,
+      ratings: {
+        averageRating: hospital.ratings?.averageRating || 0,
+        totalReviews: hospital.ratings?.totalReviews || 0
+      },
       approvalStatus: {
         status: hospital.status,
-        approvedBy: hospital.approvedBy,
-        approvalDate: hospital.approvalDate,
-        rejectionReason: hospital.rejectionReason
+        approvedBy: hospital.approvedBy ? {
+          ...hospital.approvedBy,
+          id: hospital.approvedBy._id
+        } : null,
+        approvalDate: hospital.approvalDate
       },
       metadata: {
-        createdBy: hospital.createdBy,
+        createdBy: {
+          ...hospital.createdBy,
+          id: hospital.createdBy._id
+        },
         createdAt: hospital.createdAt,
         updatedAt: hospital.updatedAt
       },
       stats: {
-        totalBookings,
-        totalRevenue: totalRevenue[0]?.total || 0,
-        averageRating: hospital.ratings.averageRating,
-        todayBookings,
+        totalBookings: hospital.stats?.totalBookings || 0,
+        totalRevenue: hospital.stats?.totalRevenue || 0,
+        averageRating: hospital.stats?.averageRating || 0,
+        todayBookings: todayBookings,
         remainingSlots: hospital.maxOpBookingsPerDay - todayBookings
       },
-      feeBreakdown: hospital.calculateFees()
+      feeBreakdown: typeof hospital.calculateFees === 'function' 
+        ? hospital.calculateFees() 
+        : {
+            basePrice: hospital.opBookingPrice,
+            platformFee: Math.ceil(hospital.opBookingPrice * 0.018),
+            gst: Math.ceil(hospital.opBookingPrice * 0.004),
+            totalAmount: Math.ceil(hospital.opBookingPrice * 1.022)
+          }
     };
 
-    res.json(hospitalProfile);
+    res.json(response);
   } catch (error) {
+    console.error('Error in getOwnHospitalProfile:', error);
     res.status(500).json({ message: error.message });
   }
 };
@@ -1077,6 +1122,13 @@ const updateHospitalProfile = async (req, res) => {
           isOpen: timing.isOpen
         }));
       }
+      // Add slot settings update
+      if (operationalDetails.slotSettings) {
+        if (operationalDetails.slotSettings.patientsPerSlot && 
+            operationalDetails.slotSettings.patientsPerSlot >= 1) {
+          hospital.patientsPerSlot = operationalDetails.slotSettings.patientsPerSlot;
+        }
+      }
     }
 
     // Update medical services if provided
@@ -1120,7 +1172,7 @@ const updateHospitalProfile = async (req, res) => {
     // Save with validation disabled for flexible updates
     const updatedHospital = await hospital.save({ validateBeforeSave: false });
 
-    // Format the response
+    // Format the response with updated slot settings
     const response = {
       basicInfo: {
         name: updatedHospital.name,
@@ -1135,7 +1187,11 @@ const updateHospitalProfile = async (req, res) => {
         isOpen: updatedHospital.isOpen,
         opBookingPrice: updatedHospital.opBookingPrice,
         maxOpBookingsPerDay: updatedHospital.maxOpBookingsPerDay,
-        timings: updatedHospital.timings
+        timings: updatedHospital.timings,
+        slotSettings: {
+          patientsPerSlot: updatedHospital.patientsPerSlot || 1,
+          totalSlotsPerDay: calculateTotalSlots(updatedHospital.timings)
+        }
       },
       medicalServices: {
         categories: updatedHospital.categories,

@@ -2,6 +2,7 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const config = require('../config/db');
+const Hospital = require('../models/Hospital');
 
 // Generate JWT Token
 const generateToken = (user) => {
@@ -27,6 +28,33 @@ const registerUser = async (req, res) => {
   try {
     const { name, phoneNumber, email } = req.body;
     
+    // Validate required fields
+    if (!name || !phoneNumber || !email) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Please provide all required fields',
+        requiredFields: ['name', 'phoneNumber', 'email']
+      });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid email format'
+      });
+    }
+
+    // Validate phone number format (assuming Indian numbers)
+    const phoneRegex = /^[6-9]\d{9}$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid phone number format. Please enter a valid 10-digit Indian mobile number'
+      });
+    }
+
     // Check if user exists (check both phone and email)
     const existingUser = await User.findOne({ 
       $or: [
@@ -34,8 +62,15 @@ const registerUser = async (req, res) => {
         { email }
       ]
     });
+
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      // Provide more specific error message
+      const field = existingUser.phoneNumber === phoneNumber ? 'phone number' : 'email';
+      return res.status(400).json({
+        success: false,
+        message: `User with this ${field} already exists`,
+        field: field
+      });
     }
 
     // Generate and store OTP
@@ -56,12 +91,18 @@ const registerUser = async (req, res) => {
     };
 
     res.json({
+      success: true,
       message: "OTP sent successfully",
       verificationId,
       ...(process.env.NODE_ENV === 'development' && { otp })
     });
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Registration Error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'An error occurred during registration',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
@@ -160,6 +201,15 @@ const loginUser = async (req, res) => {
   try {
     const { phoneNumber, token } = req.body;
     
+    // Validate input
+    if (!phoneNumber && !token) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide either phone number or token',
+        requiredFields: ['phoneNumber or token']
+      });
+    }
+
     // First try token-based login
     if (token) {
       try {
@@ -172,50 +222,86 @@ const loginUser = async (req, res) => {
         
         if (user) {
           return res.json({
+            success: true,
+            message: 'Login successful',
             token,
             user: {
               id: user._id,
               name: user.name,
               phoneNumber: user.phoneNumber,
+              email: user.email,
               role: user.role
             }
           });
         }
       } catch (err) {
-        // Token invalid or expired - continue with OTP flow
+        // Token invalid or expired
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid or expired token',
+          error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
       }
     }
 
-    // Fallback to OTP-based login
-    const user = await User.findOne({ phoneNumber, role: 'user' });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+    // Validate phone number format (for OTP-based login)
+    if (phoneNumber) {
+      const phoneRegex = /^[6-9]\d{9}$/;
+      if (!phoneRegex.test(phoneNumber)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid phone number format. Please enter a valid 10-digit Indian mobile number'
+        });
+      }
+
+      // Check if user exists
+      const user = await User.findOne({ phoneNumber, role: 'user' });
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'No account found with this phone number. Please register first',
+          field: 'phoneNumber'
+        });
+      }
+
+      // Generate and store OTP
+      const verificationId = `ver_${Math.random().toString(36).substr(2, 9)}`;
+      const otp = generateOTP();
+      
+      console.log('=== User Login Attempt ===');
+      console.log('Verification ID:', verificationId);
+      console.log('OTP:', otp);
+      console.log('Phone Number:', phoneNumber);
+      
+      global.verificationStore = global.verificationStore || {};
+      global.verificationStore[verificationId] = {
+        otp,
+        phoneNumber,
+        isLogin: true,
+        createdAt: Date.now()
+      };
+
+      return res.json({
+        success: true,
+        message: "OTP sent successfully",
+        verificationId,
+        ...(process.env.NODE_ENV === 'development' && { otp })
+      });
     }
 
-    // Generate and store OTP
-    const verificationId = `ver_${Math.random().toString(36).substr(2, 9)}`;
-    const otp = generateOTP();
-    
-    console.log('=== User Login Attempt ===');
-    console.log('Verification ID:', verificationId);
-    console.log('OTP:', otp);
-    console.log('Phone Number:', phoneNumber);
-    
-    global.verificationStore = global.verificationStore || {};
-    global.verificationStore[verificationId] = {
-      otp,
-      phoneNumber,
-      isLogin: true,
-      createdAt: Date.now()
-    };
-
-    res.json({
-      message: "OTP sent successfully",
-      verificationId,
-      ...(process.env.NODE_ENV === 'development' && { otp })
+    // If we reach here, neither token nor phone number was valid
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid login attempt'
     });
+
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    console.error('Login Error:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'An error occurred during login',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 };
 
@@ -241,6 +327,18 @@ const loginHospital = async (req, res) => {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
+    // Check if hospital has created their hospital details
+    const hospitalDetails = await Hospital.findOne({ createdBy: hospital._id });
+    const hasHospitalDetails = !!hospitalDetails;
+    
+    // Add debug logs
+    console.log('Hospital Details:', hospitalDetails);
+    console.log('Has Hospital Details:', hasHospitalDetails);
+    
+    // Get approval status from hospital details
+    const isApproved = hospitalDetails ? hospitalDetails.status === 'approved' : false;
+    console.log('Is Approved:', isApproved);
+
     const token = generateToken(hospital);
     res.json({
       token,
@@ -249,9 +347,12 @@ const loginHospital = async (req, res) => {
         name: hospital.name,
         email: hospital.email,
         role: hospital.role
-      }
+      },
+      hasHospitalDetails,
+      isApproved
     });
   } catch (error) {
+    console.error('Login Error:', error);
     res.status(500).json({ message: error.message });
   }
 };

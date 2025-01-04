@@ -171,6 +171,11 @@ const hospitalSchema = new mongoose.Schema({
       default: 30
     }
   },
+  patientsPerSlot: {
+    type: Number,
+    default: 1,
+    min: 1
+  },
 }, {
   timestamps: true
 });
