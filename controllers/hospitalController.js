@@ -319,7 +319,7 @@ const getDashboardStats = async (req, res) => {
         {
           $group: {
             _id: null,
-            total: { $sum: '$payment.amount' }
+            total: { $sum: '$payment.breakdown.basePrice' }
           }
         }
       ]),
@@ -348,7 +348,7 @@ const getDashboardStats = async (req, res) => {
         {
           $group: {
             _id: null,
-            total: { $sum: '$payment.amount' }
+            total: { $sum: '$payment.breakdown.basePrice' }
           }
         }
       ]),
@@ -864,7 +864,7 @@ const getHospitalProfile = async (req, res) => {
         {
           $group: {
             _id: null,
-            total: { $sum: '$payment.amount' }
+            total: { $sum: '$payment.breakdown.basePrice' }
           }
         }
       ])
@@ -1575,7 +1575,7 @@ const getHospitalReports = async (req, res) => {
                   { $eq: ['$status', 'completed'] },
                   { $eq: ['$payment.status', 'completed'] }
                 ]},
-                '$payment.amount',
+                '$payment.breakdown.basePrice',
                 0
               ]
             }
@@ -1591,7 +1591,6 @@ const getHospitalReports = async (req, res) => {
           },
           pending: {
             $sum: { $cond: [{ $eq: ['$status', 'pending'] }, 1, 0] }
-          }
         }
       },
       { $sort: { _id: 1 } }
@@ -1875,7 +1874,6 @@ const getPaymentStats = async (req, res) => {
         {
           $match: {
             hospital: hospital._id,
-            // Remove any status filter to get all bookings
           }
         },
         {
@@ -1885,7 +1883,7 @@ const getPaymentStats = async (req, res) => {
               $sum: {
                 $cond: [
                   { $eq: ['$payment.status', 'completed'] },
-                  '$payment.amount',
+                  '$payment.breakdown.basePrice',
                   0
                 ]
               }
@@ -1893,8 +1891,8 @@ const getPaymentStats = async (req, res) => {
             pendingAmount: {
               $sum: {
                 $cond: [
-                  { $ne: ['$payment.status', 'completed'] }, // Changed condition to include all non-completed payments
-                  { $ifNull: ['$payment.amount', 0] }, // Handle null amounts
+                  { $ne: ['$payment.status', 'completed'] },
+                  { $ifNull: ['$payment.breakdown.basePrice', 0] },
                   0
                 ]
               }
@@ -1931,7 +1929,7 @@ const getPaymentStats = async (req, res) => {
               $sum: {
                 $cond: [
                   { $eq: ['$payment.status', 'completed'] },
-                  '$payment.amount',
+                  '$payment.breakdown.basePrice',
                   0
                 ]
               }
