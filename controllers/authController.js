@@ -1,3 +1,4 @@
+
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -425,96 +426,53 @@ const verifyOTP = async (req, res) => {
     console.log('=== OTP Verification Attempt ===');
     console.log('Verification ID:', verificationId);
     console.log('Submitted OTP:', otp);
-    console.log('Stored Verification Data:', global.verificationStore?.[verificationId]);
+    console.log('Stored Verification Data:', global.verificationStore[verificationId]);
     
     // Check if verification ID exists
     if (!global.verificationStore || !global.verificationStore[verificationId]) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid or expired verification ID'
-      });
+      return res.status(400).json({ message: 'Invalid verification ID' });
     }
 
     const verification = global.verificationStore[verificationId];
 
     // Check if OTP matches
     if (verification.otp !== otp) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid OTP'
-      });
+      return res.status(400).json({ message: 'Invalid OTP' });
     }
 
     // Check if OTP is expired (5 minutes)
     if (Date.now() - verification.createdAt > 5 * 60 * 1000) {
       delete global.verificationStore[verificationId];
-      return res.status(400).json({
-        success: false,
-        message: 'OTP expired'
-      });
+      return res.status(400).json({ message: 'OTP expired' });
     }
 
     let user;
     if (verification.isLogin) {
       // Login flow
-      user = await User.findOne({ 
-        phoneNumber: verification.phoneNumber,
-        role: 'user'
-      });
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'User not found'
-        });
-      }
+      user = await User.findOne({ phoneNumber: verification.phoneNumber });
     } else {
       // Registration flow
-      const { name, phoneNumber, email } = verification.userData;
-      
-      // Create new user
-      user = new User({
-        name,
-        phoneNumber,
-        email,
-        role: 'user'
-      });
-      
+      user = new User(verification.userData);
       await user.save();
     }
 
     // Generate token
-    const token = generateToken({
-      id: user._id,
-      role: user.role,
-      email: user.email,
-      phoneNumber: user.phoneNumber
-    });
+    const token = generateToken(user);
 
     // Clean up verification store
     delete global.verificationStore[verificationId];
 
-    // Return success response
     res.json({
-      success: true,
-      message: verification.isLogin ? 'Login successful' : 'Registration successful',
       token,
       user: {
         id: user._id,
         name: user.name,
         phoneNumber: user.phoneNumber,
-        email: user.email,
         role: user.role
       }
     });
-
   } catch (error) {
-    console.error('OTP Verification Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'An error occurred during verification',
-      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
-    });
+    res.status(500).json({ message: error.message });
   }
 };
 
