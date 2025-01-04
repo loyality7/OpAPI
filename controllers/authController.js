@@ -46,26 +46,32 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Validate phone number format (assuming Indian numbers)
+    // Clean and validate phone number
+    let cleanPhoneNumber = phoneNumber.replace(/\D/g, ''); // Remove non-digits
+    if (cleanPhoneNumber.startsWith('91')) {
+      cleanPhoneNumber = cleanPhoneNumber.substring(2); // Remove 91 prefix
+    }
+
+    // Validate phone number format (10 digits starting with 6-9)
     const phoneRegex = /^[6-9]\d{9}$/;
-    if (!phoneRegex.test(phoneNumber)) {
+    if (!phoneRegex.test(cleanPhoneNumber)) {
       return res.status(400).json({
         success: false,
-        message: 'Invalid phone number format. Please enter a valid 10-digit Indian mobile number'
+        message: 'Invalid phone number format. Please enter a valid 10-digit Indian mobile number',
+        details: 'Phone number should be 10 digits starting with 6-9'
       });
     }
 
     // Check if user exists (check both phone and email)
     const existingUser = await User.findOne({ 
       $or: [
-        { phoneNumber },
+        { phoneNumber: cleanPhoneNumber },
         { email }
       ]
     });
 
     if (existingUser) {
-      // Provide more specific error message
-      const field = existingUser.phoneNumber === phoneNumber ? 'phone number' : 'email';
+      const field = existingUser.phoneNumber === cleanPhoneNumber ? 'phone number' : 'email';
       return res.status(400).json({
         success: false,
         message: `User with this ${field} already exists`,
@@ -80,12 +86,21 @@ const registerUser = async (req, res) => {
     console.log('=== New User Registration ===');
     console.log('Verification ID:', verificationId);
     console.log('OTP:', otp);
-    console.log('User Data:', { name, phoneNumber, email });
+    console.log('User Data:', { 
+      name, 
+      phoneNumber: cleanPhoneNumber, 
+      email 
+    });
     
     global.verificationStore = global.verificationStore || {};
     global.verificationStore[verificationId] = {
       otp,
-      userData: { name, phoneNumber, email, role: 'user' },
+      userData: { 
+        name, 
+        phoneNumber: cleanPhoneNumber, 
+        email, 
+        role: 'user' 
+      },
       isLogin: false,
       createdAt: Date.now()
     };
@@ -246,16 +261,24 @@ const loginUser = async (req, res) => {
 
     // Validate phone number format (for OTP-based login)
     if (phoneNumber) {
+      // Clean phone number
+      let cleanPhoneNumber = phoneNumber.replace(/\D/g, '');
+      if (cleanPhoneNumber.startsWith('91')) {
+        cleanPhoneNumber = cleanPhoneNumber.substring(2);
+      }
+
+      // Validate phone number format
       const phoneRegex = /^[6-9]\d{9}$/;
-      if (!phoneRegex.test(phoneNumber)) {
+      if (!phoneRegex.test(cleanPhoneNumber)) {
         return res.status(400).json({
           success: false,
-          message: 'Invalid phone number format. Please enter a valid 10-digit Indian mobile number'
+          message: 'Invalid phone number format. Please enter a valid 10-digit Indian mobile number',
+          details: 'Phone number should be 10 digits starting with 6-9'
         });
       }
 
-      // Check if user exists
-      const user = await User.findOne({ phoneNumber, role: 'user' });
+      // Use cleaned phone number for database query
+      const user = await User.findOne({ phoneNumber: cleanPhoneNumber, role: 'user' });
       if (!user) {
         return res.status(404).json({
           success: false,
