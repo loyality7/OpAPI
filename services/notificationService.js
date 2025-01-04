@@ -28,130 +28,138 @@ class NotificationService {
   }
 
   static async createBookingNotifications(booking, type, additionalData = {}) {
-    const notifications = [];
-    
-    const templates = {
-      BOOKING_CREATED: {
-        user: {
-          title: 'Booking Created',
-          message: `Your booking with ${booking.hospital.name} has been created for ${new Date(booking.appointmentDate).toLocaleDateString()}. Token: ${booking.tokenNumber}`
+    try {
+      const templates = {
+        BOOKING_CANCELLED: {
+          user: {
+            title: 'Booking Cancelled',
+            message: `Your booking at ${booking.hospital.name} for ${new Date(booking.appointmentDate).toLocaleDateString()} ${booking.timeSlot} has been cancelled.`
+          },
+          hospital: {
+            title: 'Booking Cancelled',
+            message: `Booking for ${booking.patientDetails.name} on ${new Date(booking.appointmentDate).toLocaleDateString()} ${booking.timeSlot} has been cancelled.`
+          }
         },
-        hospital: {
-          title: 'New Booking',
-          message: `New booking received for ${new Date(booking.appointmentDate).toLocaleDateString()} from ${booking.patientDetails.name}`
-        }
-      },
-      BOOKING_CONFIRMED: {
-        user: {
-          title: 'Booking Confirmed',
-          message: `Your appointment at ${booking.hospital.name} is confirmed for ${new Date(booking.appointmentDate).toLocaleDateString()}`
-        }
-      },
-      BOOKING_CANCELLED: {
-        user: {
-          title: 'Booking Cancelled',
-          message: 'Your booking at {{hospitalName}} for {{appointmentDate}} {{timeSlot}} has been cancelled.'
+        BOOKING_CREATED: {
+          user: {
+            title: 'Booking Created',
+            message: `Your booking with ${booking.hospital.name} has been created for ${new Date(booking.appointmentDate).toLocaleDateString()}. Token: ${booking.tokenNumber}`
+          },
+          hospital: {
+            title: 'New Booking',
+            message: `New booking received for ${new Date(booking.appointmentDate).toLocaleDateString()} from ${booking.patientDetails.name}`
+          }
         },
-        hospital: {
-          title: 'Booking Cancelled',
-          message: 'Booking for {{patientName}} on {{appointmentDate}} {{timeSlot}} has been cancelled.'
-        }
-      },
-      BOOKING_COMPLETED: {
-        user: {
-          title: 'Appointment Completed',
-          message: `Your appointment at ${booking.hospital.name} has been marked as completed`
-        }
-      },
-      PAYMENT_RECEIVED: {
-        user: {
-          title: 'Payment Successful',
-          message: `Payment of ₹${booking.payment.amount} received for booking ${booking.tokenNumber}`
+        BOOKING_CONFIRMED: {
+          user: {
+            title: 'Booking Confirmed',
+            message: `Your appointment at ${booking.hospital.name} is confirmed for ${new Date(booking.appointmentDate).toLocaleDateString()}`
+          }
         },
-        hospital: {
-          title: 'Payment Received',
-          message: `Payment of ₹${booking.payment.amount} received for booking ${booking.tokenNumber}`
+        BOOKING_COMPLETED: {
+          user: {
+            title: 'Appointment Completed',
+            message: `Your appointment at ${booking.hospital.name} has been marked as completed`
+          }
+        },
+        PAYMENT_RECEIVED: {
+          user: {
+            title: 'Payment Successful',
+            message: `Payment of ₹${booking.payment.amount} received for booking ${booking.tokenNumber}`
+          },
+          hospital: {
+            title: 'Payment Received',
+            message: `Payment of ₹${booking.payment.amount} received for booking ${booking.tokenNumber}`
+          }
+        },
+        PAYMENT_FAILED: {
+          user: {
+            title: 'Payment Failed',
+            message: `Payment failed for booking ${booking.tokenNumber}. Please try again.`
+          }
+        },
+        APPOINTMENT_REMINDER: {
+          user: {
+            title: 'Appointment Reminder',
+            message: `Reminder: Your appointment at ${booking.hospital.name} is tomorrow at ${booking.timeSlot}`
+          }
+        },
+        BOOKING_REJECTED: {
+          user: {
+            title: 'Booking Rejected',
+            message: `Your booking with ${booking.hospital.name} has been rejected. Reason: ${booking.rejectionReason || 'Not specified'}`
+          }
+        },
+        PAYMENT_REFUNDED: {
+          user: {
+            title: 'Payment Refunded',
+            message: `Refund of ₹${booking.payment.amount} initiated for booking ${booking.tokenNumber}`
+          }
+        },
+        TOKEN_UPDATED: {
+          user: {
+            title: 'Token Number Updated',
+            message: `Your token number for ${booking.hospital.name} has been updated to ${booking.tokenNumber}`
+          }
+        },
+        DOCTOR_ASSIGNED: {
+          user: {
+            title: 'Doctor Assigned',
+            message: `Dr. ${additionalData.doctorName} has been assigned to your appointment at ${booking.hospital.name}`
+          }
+        },
+        PRESCRIPTION_ADDED: {
+          user: {
+            title: 'Prescription Added',
+            message: `Your prescription for the appointment at ${booking.hospital.name} has been added`
+          }
         }
-      },
-      PAYMENT_FAILED: {
-        user: {
-          title: 'Payment Failed',
-          message: `Payment failed for booking ${booking.tokenNumber}. Please try again.`
-        }
-      },
-      APPOINTMENT_REMINDER: {
-        user: {
-          title: 'Appointment Reminder',
-          message: `Reminder: Your appointment at ${booking.hospital.name} is tomorrow at ${booking.timeSlot}`
-        }
-      },
-      BOOKING_REJECTED: {
-        user: {
-          title: 'Booking Rejected',
-          message: `Your booking with ${booking.hospital.name} has been rejected. Reason: ${booking.rejectionReason || 'Not specified'}`
-        }
-      },
-      PAYMENT_REFUNDED: {
-        user: {
-          title: 'Payment Refunded',
-          message: `Refund of ₹${booking.payment.amount} initiated for booking ${booking.tokenNumber}`
-        }
-      },
-      TOKEN_UPDATED: {
-        user: {
-          title: 'Token Number Updated',
-          message: `Your token number for ${booking.hospital.name} has been updated to ${booking.tokenNumber}`
-        }
-      },
-      DOCTOR_ASSIGNED: {
-        user: {
-          title: 'Doctor Assigned',
-          message: `Dr. ${additionalData.doctorName} has been assigned to your appointment at ${booking.hospital.name}`
-        }
-      },
-      PRESCRIPTION_ADDED: {
-        user: {
-          title: 'Prescription Added',
-          message: `Your prescription for the appointment at ${booking.hospital.name} has been added`
-        }
+      };
+
+      const template = templates[type];
+      if (!template) return null;
+
+      const notifications = [];
+
+      // Create user notification
+      if (template.user) {
+        notifications.push(
+          await this.createNotification({
+            recipient: booking.user,
+            recipientModel: 'User',
+            title: template.user.title,
+            message: template.user.message,
+            type,
+            relatedTo: {
+              model: 'Booking',
+              id: booking._id
+            }
+          })
+        );
       }
-    };
 
-    const template = templates[type];
-    
-    // Create user notification
-    if (template.user) {
-      notifications.push(
-        await this.createNotification({
-          recipient: booking.user,
-          recipientModel: 'User',
-          ...template.user,
-          type,
-          relatedTo: {
-            model: 'Booking',
-            id: booking._id
-          }
-        })
-      );
+      // Create hospital notification
+      if (template.hospital) {
+        notifications.push(
+          await this.createNotification({
+            recipient: booking.hospital._id,
+            recipientModel: 'Hospital',
+            title: template.hospital.title,
+            message: template.hospital.message,
+            type,
+            relatedTo: {
+              model: 'Booking',
+              id: booking._id
+            }
+          })
+        );
+      }
+
+      return notifications;
+    } catch (error) {
+      console.error('Error creating notifications:', error);
+      throw error;
     }
-
-    // Create hospital notification
-    if (template.hospital) {
-      notifications.push(
-        await this.createNotification({
-          recipient: booking.hospital,
-          recipientModel: 'Hospital',
-          ...template.hospital,
-          type,
-          relatedTo: {
-            model: 'Booking',
-            id: booking._id
-          }
-        })
-      );
-    }
-
-    return notifications;
   }
 
   static async createHospitalNotification(hospital, type, data = {}) {
