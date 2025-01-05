@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { auth, checkRole } = require('../middlewares/auth');
+const Booking = require('../models/Booking');
 const {
   createBooking,
   verifyPayment,

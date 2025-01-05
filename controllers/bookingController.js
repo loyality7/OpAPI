@@ -619,6 +619,31 @@ const assignDoctor = async (req, res) => {
   }
 };
 
+// Add this to your existing controller functions
+const getPendingPayments = async (req, res) => {
+  try {
+    const pendingPayments = await Booking.find({
+      'payment.status': 'pending'
+    })
+    .populate('user', 'email name')
+    .populate('hospital', 'name address')
+    .sort('-createdAt')
+    .select('tokenNumber patientDetails payment appointmentDate timeSlot status createdAt');
+
+    res.json({
+      success: true,
+      count: pendingPayments.length,
+      data: pendingPayments
+    });
+  } catch (error) {
+    console.error('Error fetching pending payments:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+};
+
 module.exports = {
   createBooking,
   verifyPayment,
@@ -629,6 +654,7 @@ module.exports = {
   updateCodPaymentStatus,
   cancelBooking,
   updateBookingToken,
-  assignDoctor
+  assignDoctor,
+  getPendingPayments
 };
 
