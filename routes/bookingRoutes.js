@@ -375,4 +375,42 @@ router.put(
  */
 router.post('/bookings/:id/cancel', auth, checkRole(['user']), cancelBooking);
 
+/**
+ * @swagger
+ * /api/admin/bookings/pending-payments:
+ *   get:
+ *     summary: Get all bookings with pending payments (Admin only)
+ *     tags: [Bookings]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of bookings with pending payments
+ *       403:
+ *         description: Not authorized - Admin only
+ */
+router.get('/admin/bookings/pending-payments', auth, checkRole(['admin']), async (req, res) => {
+  try {
+    const pendingPayments = await Booking.find({
+      'payment.status': 'pending'
+    })
+    .populate('user', 'email name')
+    .populate('hospital', 'name address')
+    .sort('-createdAt')
+    .select('tokenNumber patientDetails payment appointmentDate timeSlot status createdAt');
+
+    res.json({
+      success: true,
+      count: pendingPayments.length,
+      data: pendingPayments
+    });
+  } catch (error) {
+    console.error('Error fetching pending payments:', error);
+    res.status(500).json({ 
+      success: false,
+      message: error.message 
+    });
+  }
+});
+
 module.exports = router;
