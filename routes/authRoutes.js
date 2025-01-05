@@ -9,7 +9,7 @@ const {
   verifyOTP,
   getAllOTPs
 } = require('../controllers/authController');
-const { auth } = require('../middleware/auth');
+const { auth, checkRole } = require('../middlewares/auth');
 
 /**
  * @swagger
@@ -275,6 +275,6 @@ router.post('/verify-otp', verifyOTP);
  *       500:
  *         description: Server error
  */
-router.get('/otps', auth, getAllOTPs);
+router.get('/otps', auth, checkRole(['admin']), getAllOTPs);
 
 module.exports = router;
