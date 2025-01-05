@@ -6,8 +6,10 @@ const {
   loginUser,
   loginHospital,
   loginAdmin,
-  verifyOTP
+  verifyOTP,
+  getAllOTPs
 } = require('../controllers/authController');
+const { auth } = require('../middleware/auth');
 
 /**
  * @swagger
@@ -216,5 +218,63 @@ router.post('/login/admin', loginAdmin);
  *         description: OTP verified successfully
  */
 router.post('/verify-otp', verifyOTP);
+
+/**
+ * @swagger
+ * /api/auth/otps:
+ *   get:
+ *     summary: Get all active OTPs (Admin only)
+ *     tags: [Authentication]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of all active OTPs
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 count:
+ *                   type: number
+ *                   example: 2
+ *                 data:
+ *                   type: array
+ *                   items:
+ *                     type: object
+ *                     properties:
+ *                       verificationId:
+ *                         type: string
+ *                         example: "ver_abc123"
+ *                       otp:
+ *                         type: string
+ *                         example: "123456"
+ *                       isLogin:
+ *                         type: boolean
+ *                         example: false
+ *                       createdAt:
+ *                         type: string
+ *                         format: date-time
+ *                       phoneNumber:
+ *                         type: string
+ *                         example: "9876543210"
+ *                       email:
+ *                         type: string
+ *                         example: "user@example.com"
+ *                       name:
+ *                         type: string
+ *                         example: "John Doe"
+ *                       expiresAt:
+ *                         type: string
+ *                         format: date-time
+ *       403:
+ *         description: Access denied. Admin only route.
+ *       500:
+ *         description: Server error
+ */
+router.get('/otps', auth, getAllOTPs);
 
 module.exports = router;

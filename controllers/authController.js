@@ -1,4 +1,3 @@
-
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
@@ -476,6 +475,47 @@ const verifyOTP = async (req, res) => {
   }
 };
 
+// Get All OTPs (Admin Only)
+const getAllOTPs = async (req, res) => {
+  try {
+    // Verify if the requester is an admin
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Admin only route.'
+      });
+    }
+
+    // Get all verification data from the store
+    const verificationData = global.verificationStore || {};
+    
+    // Transform the data for better readability
+    const formattedData = Object.entries(verificationData).map(([verificationId, data]) => ({
+      verificationId,
+      otp: data.otp,
+      isLogin: data.isLogin,
+      createdAt: new Date(data.createdAt),
+      phoneNumber: data.phoneNumber || (data.userData && data.userData.phoneNumber),
+      email: data.userData?.email,
+      name: data.userData?.name,
+      expiresAt: new Date(data.createdAt + (5 * 60 * 1000)) // 5 minutes from creation
+    }));
+
+    res.json({
+      success: true,
+      count: formattedData.length,
+      data: formattedData
+    });
+  } catch (error) {
+    console.error('Get All OTPs Error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'An error occurred while fetching OTPs',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   registerUser,
   registerHospital,
@@ -483,5 +523,6 @@ module.exports = {
   loginUser,
   loginHospital,
   loginAdmin,
-  verifyOTP
+  verifyOTP,
+  getAllOTPs
 };
