@@ -61,10 +61,28 @@ const bookingSchema = new mongoose.Schema({
     },
     paidAt: Date,
     breakdown: {
-      platformFee: Number,
-      emergencyFee: Number,
-      gst: Number,
-      total: Number
+      platformFee: {
+        type: Number,
+        required: true
+      },
+      emergencyFee: {
+        type: Number,
+        default: 0
+      },
+      gst: {
+        type: Number,
+        required: true
+      },
+      total: {
+        type: Number,
+        required: true
+      }
+    },
+    refundDetails: {
+      refundId: String,
+      amount: Number,
+      status: String,
+      processedAt: Date
     }
   },
   rejectionReason: String,

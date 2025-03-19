@@ -24,7 +24,7 @@ const createBooking = async (req, res) => {
       healthIssue,
       doctorName,
       specialty,
-      isEmergency
+      isEmergency = false // Default to false if not provided
     } = req.body;
     
     // Validate date format (DD-MM-YYYY)
@@ -112,63 +112,8 @@ const createBooking = async (req, res) => {
       });
     }
 
-    // Check slot capacity (skip for emergency bookings)
-    if (!isEmergency) {
-      // Get the hospital's slot settings
-      const maxPatientsPerSlot = hospital.patientsPerSlot || 1;
-      const maxBookingsPerDay = hospital.maxOpBookingsPerDay || 50;
-
-      // Count total bookings for the day
-      const startOfDay = new Date(appointmentDateTime);
-      startOfDay.setHours(0, 0, 0, 0);
-      const endOfDay = new Date(appointmentDateTime);
-      endOfDay.setHours(23, 59, 59, 999);
-
-      const totalBookingsForDay = await Booking.countDocuments({
-        hospital: hospitalId,
-        appointmentDate: {
-          $gte: startOfDay,
-          $lt: endOfDay
-        },
-        status: { $in: ['pending', 'confirmed'] }
-      });
-
-      // Check if day limit is reached
-      if (totalBookingsForDay >= maxBookingsPerDay) {
-        return res.status(400).json({ 
-          success: false,
-          error: {
-            code: 'DAY_FULLY_BOOKED',
-            message: `No more appointments available for this day. Maximum limit (${maxBookingsPerDay}) reached. Please try another day.`,
-            maxBookingsPerDay
-          }
-        });
-      }
-
-      // Count bookings for this specific time slot
-      const bookingsInSlot = await Booking.countDocuments({
-        hospital: hospitalId,
-        appointmentDate: appointmentDateTime,
-        timeSlot: timeSlot,
-        status: { $in: ['pending', 'confirmed'] }
-      });
-
-      // Check if slot limit is reached
-      if (bookingsInSlot >= maxPatientsPerSlot) {
-        return res.status(400).json({ 
-          success: false,
-          error: {
-            code: 'SLOT_FULLY_BOOKED',
-            message: `This time slot is fully booked. Maximum capacity (${maxPatientsPerSlot} patients) reached. Please select another time slot.`,
-            maxPatientsPerSlot,
-            currentBookings: bookingsInSlot
-          }
-        });
-      }
-    }
-
-    // Calculate fees with emergency consideration
-    const { platformFee, emergencyFee, gst, totalAmount } = hospital.calculateFees(isEmergency);
+    // Calculate platform fees with emergency consideration
+    const fees = hospital.calculateFees(isEmergency);
 
     // Generate token number
     const startOfDay = new Date(appointmentDateTime);
@@ -213,14 +158,9 @@ const createBooking = async (req, res) => {
       },
       payment: {
         method: paymentMethod,
-        amount: totalAmount,
+        amount: fees.totalAmount,
         status: 'pending',
-        breakdown: {
-          platformFee,
-          emergencyFee,
-          gst,
-          total: totalAmount
-        }
+        breakdown: fees.breakdown
       }
     });
 
@@ -230,10 +170,9 @@ const createBooking = async (req, res) => {
 
     // Handle online payment
     if (paymentMethod === 'online') {
-      const orderResponse = await RazorpayService.createOrder(booking._id.toString(), totalAmount);
+      const orderResponse = await RazorpayService.createOrder(booking._id.toString(), fees.totalAmount);
       
       if (!orderResponse.success) {
-        // If payment creation fails, delete the booking
         await Booking.findByIdAndDelete(booking._id);
         return res.status(500).json({
           success: false,
@@ -260,6 +199,13 @@ const createBooking = async (req, res) => {
               email: req.user.email,
               contact: booking.patientDetails.mobile
             }
+          },
+          feeBreakdown: {
+            platformFee: fees.platformFee,
+            emergencyFee: fees.emergencyFee,
+            gst: fees.gst,
+            total: fees.totalAmount,
+            note: "This is only the platform fee. Hospital consultation charges to be paid separately at the hospital."
           }
         }
       });
@@ -271,7 +217,14 @@ const createBooking = async (req, res) => {
       message: 'Booking created successfully',
       data: {
         booking,
-        paymentMethod: 'cod'
+        paymentMethod: 'cod',
+        feeBreakdown: {
+          platformFee: fees.platformFee,
+          emergencyFee: fees.emergencyFee,
+          gst: fees.gst,
+          total: fees.totalAmount,
+          note: "This is only the platform fee. Hospital consultation charges to be paid separately at the hospital."
+        }
       }
     });
 

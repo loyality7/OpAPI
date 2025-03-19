@@ -207,15 +207,21 @@ hospitalSchema.set('toJSON', {
 hospitalSchema.methods.calculateFees = function(isEmergency = false) {
   const platformFee = PLATFORM_FEE;
   const emergencyFee = isEmergency ? EMERGENCY_FEE : 0;
-  const totalBeforeGst = platformFee + emergencyFee;
-  const gst = Math.round(totalBeforeGst * GST_RATE);  // GST on platform fee and emergency fee
-  const totalAmount = totalBeforeGst + gst;
+  const baseAmount = platformFee + emergencyFee;
+  const gst = Math.round(baseAmount * GST_RATE);  // GST on platform fee and emergency fee
+  const totalAmount = baseAmount + gst;
 
   return {
     platformFee,
     emergencyFee,
     gst,
-    totalAmount
+    totalAmount,
+    breakdown: {
+      platformFee,
+      emergencyFee,
+      gst,
+      total: totalAmount
+    }
   };
 };
 
