@@ -133,7 +133,7 @@ const createBooking = async (req, res) => {
     const tokenPrefix = isEmergency ? 'E' : '';
     const tokenNumber = `${hospitalPrefix}${tokenPrefix}${(existingBookingsCount + 1).toString().padStart(3, '0')}`;
 
-    // Create booking
+    // Create booking with correct fee breakdown
     const booking = new Booking({
       user: req.user.id,
       hospital: hospitalId,
@@ -160,7 +160,12 @@ const createBooking = async (req, res) => {
         method: paymentMethod,
         amount: fees.totalAmount,
         status: 'pending',
-        breakdown: fees.breakdown
+        breakdown: {
+          platformFee: fees.platformFee,      // Fixed 30 rupees
+          emergencyFee: fees.emergencyFee,    // 100 rupees if emergency, 0 if not
+          gst: fees.gst,                      // 18% of (platformFee + emergencyFee)
+          total: fees.totalAmount             // Sum of all above
+        }
       }
     });
 
@@ -170,7 +175,7 @@ const createBooking = async (req, res) => {
 
     // Handle online payment
     if (paymentMethod === 'online') {
-      const orderResponse = await RazorpayService.createOrder(booking._id.toString(), fees.totalAmount);
+      const orderResponse = await RazorpayService.createOrder(booking._id.toString(), fees.totalAmount * 100);
       
       if (!orderResponse.success) {
         await Booking.findByIdAndDelete(booking._id);
@@ -191,8 +196,8 @@ const createBooking = async (req, res) => {
           booking,
           paymentDetails: {
             key: process.env.RAZORPAY_KEY_ID,
-            amount: orderResponse.data.amount,
-            currency: orderResponse.data.currency,
+            amount: fees.totalAmount * 100, // Razorpay expects amount in paise
+            currency: 'INR',
             orderId: orderResponse.data.orderId,
             prefillData: {
               name: booking.patientDetails.name,
