@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const PLATFORM_FEE = 30;  // Fixed platform fee in rupees
+const EMERGENCY_FEE = 100; // Additional fee for emergency bookings
 const GST_RATE = 0.18;    // 18% GST
 
 const timingSchema = new mongoose.Schema({
@@ -203,15 +204,16 @@ hospitalSchema.set('toJSON', {
   }
 });
 
-hospitalSchema.methods.calculateFees = function() {
-  const basePrice = this.opBookingPrice || 0;  // Add default value
+hospitalSchema.methods.calculateFees = function(isEmergency = false) {
   const platformFee = PLATFORM_FEE;
-  const gst = Math.round(platformFee * GST_RATE);  // GST on platform fee
-  const totalAmount = basePrice + platformFee + gst;
+  const emergencyFee = isEmergency ? EMERGENCY_FEE : 0;
+  const totalBeforeGst = platformFee + emergencyFee;
+  const gst = Math.round(totalBeforeGst * GST_RATE);  // GST on platform fee and emergency fee
+  const totalAmount = totalBeforeGst + gst;
 
   return {
-    basePrice,
     platformFee,
+    emergencyFee,
     gst,
     totalAmount
   };

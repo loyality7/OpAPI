@@ -1,15 +1,9 @@
 const Booking = require('../models/Booking');
 const Hospital = require('../models/Hospital');
-const Razorpay = require('razorpay');
+const RazorpayService = require('../services/razorpayService');
 const PDFDocument = require('pdfkit');
 const crypto = require('crypto');
 const NotificationService = require('../services/notificationService');
-
-// Initialize Razorpay
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID,
-  key_secret: process.env.RAZORPAY_KEY_SECRET
-});
 
 // Create booking
 const createBooking = async (req, res) => {
@@ -29,14 +23,19 @@ const createBooking = async (req, res) => {
       address,
       healthIssue,
       doctorName,
-      specialty
+      specialty,
+      isEmergency
     } = req.body;
     
     // Validate date format (DD-MM-YYYY)
     const dateRegex = /^(0[1-9]|[12][0-9]|3[01])-(0[1-9]|1[0-2])-\d{4}$/;
     if (!dateRegex.test(appointmentDate)) {
       return res.status(400).json({ 
-        message: 'Invalid date format. Please use DD-MM-YYYY (e.g., 25-12-2024)' 
+        success: false,
+        error: {
+          code: 'INVALID_DATE_FORMAT',
+          message: 'Please enter date in DD-MM-YYYY format (e.g., 25-12-2024)'
+        }
       });
     }
 
@@ -44,13 +43,17 @@ const createBooking = async (req, res) => {
     const timeRegex = /^(0?[1-9]|1[0-2]):[0-5][0-9] (AM|PM)$/;
     if (!timeRegex.test(timeSlot)) {
       return res.status(400).json({ 
-        message: 'Invalid time format. Please use HH:MM AM/PM (e.g., 09:30 AM)' 
+        success: false,
+        error: {
+          code: 'INVALID_TIME_FORMAT',
+          message: 'Please enter time in HH:MM AM/PM format (e.g., 09:30 AM)'
+        }
       });
     }
 
     // Get current time in IST
     const now = new Date();
-    const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+    const istOffset = 5.5 * 60 * 60 * 1000;
     const istNow = new Date(now.getTime() + istOffset);
 
     // Parse the appointment date
@@ -63,38 +66,21 @@ const createBooking = async (req, res) => {
     if (period === 'PM' && hours !== 12) {
       hour24 += 12;
     } else if (period === 'AM' && hours === 12) {
-      hour24 = 0; // 12:00 AM should be 00:00
+      hour24 = 0;
     }
 
     // Create appointment date in UTC
     const appointmentDateTime = new Date(Date.UTC(year, month - 1, day, hour24, minutes));
-
-    // Add IST offset to appointment time
     const appointmentDateTimeIST = new Date(appointmentDateTime.getTime() + istOffset);
-
-    // Debug logs
-    console.log('Raw input:', { appointmentDate, timeSlot, hour24 });
-    console.log('Current Date (IST):', istNow.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-    console.log('Appointment Date (IST):', appointmentDateTimeIST.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-    console.log('Is Future Date:', appointmentDateTimeIST > istNow);
 
     // Compare dates in IST
     if (appointmentDateTimeIST <= istNow) {
       return res.status(400).json({ 
-        message: 'Appointment date and time must be in the future' 
-      });
-    }
-
-    // Check if time slot is available
-    const existingBooking = await Booking.findOne({
-      hospital: hospitalId,
-      appointmentDate: appointmentDateTime,
-      status: { $in: ['pending', 'pending'] }
-    });
-
-    if (existingBooking) {
-      return res.status(400).json({ 
-        message: 'This time slot is already booked' 
+        success: false,
+        error: {
+          code: 'PAST_APPOINTMENT',
+          message: 'Cannot book appointments for past date and time. Please select a future time slot.'
+        }
       });
     }
 
@@ -106,36 +92,85 @@ const createBooking = async (req, res) => {
     });
 
     if (!hospital) {
-      return res.status(400).json({ message: 'Hospital is not available for booking' });
-    }
-
-    // Check slot capacity
-    const startOfSlot = new Date(appointmentDateTime);
-    const slotDuration = hospital.slotSettings?.slotDuration || 30;
-    const patientsPerSlot = hospital.slotSettings?.patientsPerSlot || 1;
-    
-    const endOfSlot = new Date(startOfSlot.getTime() + slotDuration * 60000);
-
-    // Count existing bookings in this slot
-    const existingBookingsInSlot = await Booking.countDocuments({
-      hospital: hospitalId,
-      appointmentDate: {
-        $gte: startOfSlot,
-        $lt: endOfSlot
-      },
-      status: { $in: ['pending', 'confirmed'] }
-    });
-
-    if (existingBookingsInSlot >= patientsPerSlot) {
       return res.status(400).json({ 
-        message: 'This time slot is fully booked. Please select another slot.' 
+        success: false,
+        error: {
+          code: 'HOSPITAL_UNAVAILABLE',
+          message: 'This hospital is currently not accepting bookings. Please try another hospital.'
+        }
       });
     }
 
-    // Calculate fees
-    const { basePrice, platformFee, gst, totalAmount } = hospital.calculateFees();
+    // If emergency booking, check if hospital supports emergency services
+    if (isEmergency && !hospital.emergencyServices) {
+      return res.status(400).json({ 
+        success: false,
+        error: {
+          code: 'NO_EMERGENCY_SERVICE',
+          message: 'This hospital does not provide emergency services. Please select a hospital that offers emergency care.'
+        }
+      });
+    }
 
-    // Get the count of existing bookings for this hospital and date
+    // Check slot capacity (skip for emergency bookings)
+    if (!isEmergency) {
+      // Get the hospital's slot settings
+      const maxPatientsPerSlot = hospital.patientsPerSlot || 1;
+      const maxBookingsPerDay = hospital.maxOpBookingsPerDay || 50;
+
+      // Count total bookings for the day
+      const startOfDay = new Date(appointmentDateTime);
+      startOfDay.setHours(0, 0, 0, 0);
+      const endOfDay = new Date(appointmentDateTime);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      const totalBookingsForDay = await Booking.countDocuments({
+        hospital: hospitalId,
+        appointmentDate: {
+          $gte: startOfDay,
+          $lt: endOfDay
+        },
+        status: { $in: ['pending', 'confirmed'] }
+      });
+
+      // Check if day limit is reached
+      if (totalBookingsForDay >= maxBookingsPerDay) {
+        return res.status(400).json({ 
+          success: false,
+          error: {
+            code: 'DAY_FULLY_BOOKED',
+            message: `No more appointments available for this day. Maximum limit (${maxBookingsPerDay}) reached. Please try another day.`,
+            maxBookingsPerDay
+          }
+        });
+      }
+
+      // Count bookings for this specific time slot
+      const bookingsInSlot = await Booking.countDocuments({
+        hospital: hospitalId,
+        appointmentDate: appointmentDateTime,
+        timeSlot: timeSlot,
+        status: { $in: ['pending', 'confirmed'] }
+      });
+
+      // Check if slot limit is reached
+      if (bookingsInSlot >= maxPatientsPerSlot) {
+        return res.status(400).json({ 
+          success: false,
+          error: {
+            code: 'SLOT_FULLY_BOOKED',
+            message: `This time slot is fully booked. Maximum capacity (${maxPatientsPerSlot} patients) reached. Please select another time slot.`,
+            maxPatientsPerSlot,
+            currentBookings: bookingsInSlot
+          }
+        });
+      }
+    }
+
+    // Calculate fees with emergency consideration
+    const { platformFee, emergencyFee, gst, totalAmount } = hospital.calculateFees(isEmergency);
+
+    // Generate token number
     const startOfDay = new Date(appointmentDateTime);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(appointmentDateTime);
@@ -149,17 +184,18 @@ const createBooking = async (req, res) => {
       }
     });
 
-    // Generate token number
     const hospitalPrefix = hospital.name.substring(0, 3).toUpperCase();
-    const tokenNumber = `${hospitalPrefix}${(existingBookingsCount + 1).toString().padStart(3, '0')}`;
+    const tokenPrefix = isEmergency ? 'E' : '';
+    const tokenNumber = `${hospitalPrefix}${tokenPrefix}${(existingBookingsCount + 1).toString().padStart(3, '0')}`;
 
-    // Create booking with the generated token number
+    // Create booking
     const booking = new Booking({
       user: req.user.id,
       hospital: hospitalId,
       appointmentDate: appointmentDateTime,
       timeSlot,
       tokenNumber,
+      isEmergency,
       status: 'pending',
       symptoms,
       specialization,
@@ -180,8 +216,8 @@ const createBooking = async (req, res) => {
         amount: totalAmount,
         status: 'pending',
         breakdown: {
-          basePrice,
           platformFee,
+          emergencyFee,
           gst,
           total: totalAmount
         }
@@ -192,45 +228,91 @@ const createBooking = async (req, res) => {
     await booking.populate('hospital', 'name address');
     await NotificationService.createBookingNotifications(booking, 'BOOKING_CREATED');
 
-    // If online payment, create Razorpay order
+    // Handle online payment
     if (paymentMethod === 'online') {
-      const order = await razorpay.orders.create({
-        amount: totalAmount * 100,
-        currency: 'INR',
-        receipt: booking._id.toString()
-      });
+      const orderResponse = await RazorpayService.createOrder(booking._id.toString(), totalAmount);
+      
+      if (!orderResponse.success) {
+        // If payment creation fails, delete the booking
+        await Booking.findByIdAndDelete(booking._id);
+        return res.status(500).json({
+          success: false,
+          error: orderResponse.error
+        });
+      }
+
+      // Update booking with order details
+      booking.payment.orderId = orderResponse.data.orderId;
+      await booking.save();
 
       return res.status(201).json({
-        booking,
-        paymentDetails: {
-          orderId: order.id,
-          amount: order.amount,
-          currency: order.currency
+        success: true,
+        message: 'Booking created successfully. Please complete the payment.',
+        data: {
+          booking,
+          paymentDetails: {
+            key: process.env.RAZORPAY_KEY_ID,
+            amount: orderResponse.data.amount,
+            currency: orderResponse.data.currency,
+            orderId: orderResponse.data.orderId,
+            prefillData: {
+              name: booking.patientDetails.name,
+              email: req.user.email,
+              contact: booking.patientDetails.mobile
+            }
+          }
         }
       });
     }
 
-    res.status(201).json(booking);
+    // For COD bookings
+    res.status(201).json({
+      success: true,
+      message: 'Booking created successfully',
+      data: {
+        booking,
+        paymentMethod: 'cod'
+      }
+    });
+
   } catch (error) {
     console.error('Booking creation error:', error);
-    res.status(400).json({ message: error.message });
+    res.status(500).json({ 
+      success: false,
+      error: {
+        code: 'BOOKING_FAILED',
+        message: 'Unable to create booking. Please try again later.',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      }
+    });
   }
 };
 
 // Verify payment and confirm booking
 const verifyPayment = async (req, res) => {
   try {
-    const { bookingId, paymentId, signature } = req.body;
+    const { bookingId, paymentId, signature, orderId } = req.body;
     
-    // Verify payment signature
-    const booking = await Booking.findById(bookingId);
-    const generatedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
-      .update(`${booking.payment.orderId}|${paymentId}`)
-      .digest('hex');
+    // Verify payment signature and status
+    const verificationResponse = await RazorpayService.verifyPayment(orderId, paymentId, signature);
+    
+    if (!verificationResponse.success) {
+      return res.status(400).json({
+        success: false,
+        error: verificationResponse.error
+      });
+    }
 
-    if (generatedSignature !== signature) {
-      return res.status(400).json({ message: 'Invalid payment' });
+    // Get booking details
+    const booking = await Booking.findById(bookingId);
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'BOOKING_NOT_FOUND',
+          message: 'Booking not found'
+        }
+      });
     }
 
     // Update booking payment status
@@ -238,12 +320,29 @@ const verifyPayment = async (req, res) => {
     booking.payment.status = 'completed';
     booking.payment.paidAt = new Date();
     booking.status = 'confirmed';
+    booking.payment.details = verificationResponse.data;
+
     await booking.save();
     await NotificationService.createBookingNotifications(booking, 'PAYMENT_RECEIVED');
 
-    res.json(booking);
+    res.json({
+      success: true,
+      message: 'Payment verified successfully',
+      data: {
+        booking,
+        payment: verificationResponse.data
+      }
+    });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    console.error('Payment verification error:', error);
+    res.status(400).json({
+      success: false,
+      error: {
+        code: 'VERIFICATION_ERROR',
+        message: 'Payment verification failed',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      }
+    });
   }
 };
 
@@ -532,19 +631,20 @@ const cancelBooking = async (req, res) => {
 
     // If payment was made online and completed, initiate refund process
     if (booking.payment.method === 'online' && booking.payment.status === 'completed') {
-      try {
-        await razorpay.payments.refund(booking.payment.paymentId, {
-          amount: booking.payment.amount * 100,
-          speed: 'normal'
-        });
-        booking.payment.status = 'refunded';
-      } catch (refundError) {
-        console.error('Refund failed:', refundError);
-        return res.status(500).json({ 
+      const refundResponse = await RazorpayService.initiateRefund(
+        booking.payment.paymentId,
+        booking.payment.amount
+      );
+
+      if (!refundResponse.success) {
+        return res.status(500).json({
           success: false,
-          message: 'Unable to process refund. Please contact support.' 
+          error: refundResponse.error
         });
       }
+
+      booking.payment.status = 'refunded';
+      booking.payment.refundDetails = refundResponse.data;
     }
 
     booking.status = 'cancelled';
@@ -552,24 +652,25 @@ const cancelBooking = async (req, res) => {
     await booking.save();
 
     // Create notifications for both user and hospital
-    await NotificationService.createBookingNotifications(booking, 'BOOKING_CANCELLED', {
-      bookingId: booking._id,
-      hospitalName: booking.hospital.name,
-      appointmentDate: booking.appointmentDate,
-      timeSlot: booking.timeSlot,
-      patientName: booking.patientDetails.name
-    });
+    await NotificationService.createBookingNotifications(booking, 'BOOKING_CANCELLED');
 
     res.json({
       success: true,
       message: 'Booking cancelled successfully',
-      booking
+      data: {
+        booking,
+        refundDetails: booking.payment.refundDetails
+      }
     });
   } catch (error) {
     console.error('Error cancelling booking:', error);
     res.status(500).json({ 
       success: false,
-      message: error.message 
+      error: {
+        code: 'CANCELLATION_FAILED',
+        message: 'Unable to cancel booking',
+        details: process.env.NODE_ENV === 'development' ? error.message : undefined
+      }
     });
   }
 };

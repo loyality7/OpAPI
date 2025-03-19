@@ -11,6 +11,10 @@ const bookingSchema = new mongoose.Schema({
     ref: 'Hospital',
     required: true
   },
+  isEmergency: {
+    type: Boolean,
+    default: false
+  },
   appointmentDate: {
     type: Date,
     required: true,
@@ -52,13 +56,13 @@ const bookingSchema = new mongoose.Schema({
     },
     status: {
       type: String,
-      enum: ['pending', 'completed', 'failed'],
+      enum: ['pending', 'completed', 'failed', 'refunded'],
       default: 'pending'
     },
     paidAt: Date,
     breakdown: {
-      basePrice: Number,
       platformFee: Number,
+      emergencyFee: Number,
       gst: Number,
       total: Number
     }
