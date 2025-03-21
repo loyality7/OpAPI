@@ -171,8 +171,8 @@ const hospitalSchema = new mongoose.Schema({
     },
     slotDuration: {
       type: Number,
-      enum: [15, 30, 45, 60],
-      default: 30
+      enum: [15, 20, 30, 45, 60],
+      default: 20
     }
   },
   patientsPerSlot: {
