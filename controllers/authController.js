@@ -18,22 +18,17 @@ const generateToken = (user) => {
   );
 };
 
-// Generate OTP
-const generateOTP = () => {
-  return Math.floor(100000 + Math.random() * 900000).toString();
-};
-
-// User Registration (OTP Based)
+// User Registration (Email/Password Based with Phone)
 const registerUser = async (req, res) => {
   try {
-    const { name, phoneNumber, email } = req.body;
+    const { name, phoneNumber, email, password } = req.body;
     
     // Validate required fields
-    if (!name || !phoneNumber || !email) {
+    if (!name || !email || !password || !phoneNumber) {
       return res.status(400).json({ 
         success: false,
         message: 'Please provide all required fields',
-        requiredFields: ['name', 'phoneNumber', 'email']
+        requiredFields: ['name', 'email', 'password', 'phoneNumber']
       });
     }
 
@@ -79,38 +74,34 @@ const registerUser = async (req, res) => {
       });
     }
 
-    // Generate and store OTP
-    const verificationId = `ver_${Math.random().toString(36).substr(2, 9)}`;
-    const otp = generateOTP();
-    
-    console.log('=== New User Registration ===');
-    console.log('Verification ID:', verificationId);
-    console.log('OTP:', otp);
-    console.log('User Data:', { 
-      name, 
-      phoneNumber: cleanPhoneNumber, 
-      email 
-    });
-    
-    global.verificationStore = global.verificationStore || {};
-    global.verificationStore[verificationId] = {
-      otp,
-      userData: { 
-        name, 
-        phoneNumber: cleanPhoneNumber, 
-        email, 
-        role: 'user' 
-      },
-      isLogin: false,
-      createdAt: Date.now()
-    };
+    // Hash password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
 
-    res.json({
-      success: true,
-      message: "OTP sent successfully",
-      verificationId,
-      ...(process.env.NODE_ENV === 'development' && { otp })
+    // Create new user
+    const user = new User({
+      name,
+      email,
+      phoneNumber: cleanPhoneNumber,
+      password: hashedPassword,
+      role: 'user'
     });
+
+    await user.save();
+
+    const token = generateToken(user);
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role
+      }
+    });
+
   } catch (error) {
     console.error('Registration Error:', error);
     res.status(500).json({ 
@@ -211,111 +202,66 @@ const registerAdmin = async (req, res) => {
   }
 };
 
-// User Login (Token/OTP Based)
+// User Login (Email/Password Based)
 const loginUser = async (req, res) => {
   try {
-    const { phoneNumber, token } = req.body;
+    const { email, password } = req.body;
     
     // Validate input
-    if (!phoneNumber && !token) {
+    if (!email || !password) {
       return res.status(400).json({
         success: false,
-        message: 'Please provide either phone number or token',
-        requiredFields: ['phoneNumber or token']
+        message: 'Please provide email and password',
+        requiredFields: ['email', 'password']
       });
     }
 
-    // First try token-based login
-    if (token) {
-      try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findOne({ 
-          _id: decoded.id, 
-          phoneNumber: decoded.phoneNumber,
-          role: 'user' 
-        });
-        
-        if (user) {
-          return res.json({
-            success: true,
-            message: 'Login successful',
-            token,
-            user: {
-              id: user._id,
-              name: user.name,
-              phoneNumber: user.phoneNumber,
-              email: user.email,
-              role: user.role
-            }
-          });
-        }
-      } catch (err) {
-        // Token invalid or expired
+    // Check if user exists
+    const user = await User.findOne({ email, role: 'user' });
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Check if password exists in user document
+    if (!user.password) {
+      return res.status(401).json({
+        success: false,
+        message: 'Account not set up for password login. Please reset your password.'
+      });
+    }
+
+    // Verify password
+    try {
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
         return res.status(401).json({
           success: false,
-          message: 'Invalid or expired token',
-          error: process.env.NODE_ENV === 'development' ? err.message : undefined
+          message: 'Invalid credentials'
         });
       }
-    }
-
-    // Validate phone number format (for OTP-based login)
-    if (phoneNumber) {
-      // Clean phone number
-      let cleanPhoneNumber = phoneNumber.replace(/\D/g, '');
-      if (cleanPhoneNumber.startsWith('91')) {
-        cleanPhoneNumber = cleanPhoneNumber.substring(2);
-      }
-
-      // Validate phone number format
-      const phoneRegex = /^[6-9]\d{9}$/;
-      if (!phoneRegex.test(cleanPhoneNumber)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid phone number format. Please enter a valid 10-digit Indian mobile number',
-          details: 'Phone number should be 10 digits starting with 6-9'
-        });
-      }
-
-      // Use cleaned phone number for database query
-      const user = await User.findOne({ phoneNumber: cleanPhoneNumber, role: 'user' });
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: 'No account found with this phone number. Please register first',
-          field: 'phoneNumber'
-        });
-      }
-
-      // Generate and store OTP
-      const verificationId = `ver_${Math.random().toString(36).substr(2, 9)}`;
-      const otp = generateOTP();
-      
-      console.log('=== User Login Attempt ===');
-      console.log('Verification ID:', verificationId);
-      console.log('OTP:', otp);
-      console.log('Phone Number:', phoneNumber);
-      
-      global.verificationStore = global.verificationStore || {};
-      global.verificationStore[verificationId] = {
-        otp,
-        phoneNumber,
-        isLogin: true,
-        createdAt: Date.now()
-      };
-
-      return res.json({
-        success: true,
-        message: "OTP sent successfully",
-        verificationId,
-        ...(process.env.NODE_ENV === 'development' && { otp })
+    } catch (bcryptError) {
+      console.error('Password comparison error:', bcryptError);
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
       });
     }
 
-    // If we reach here, neither token nor phone number was valid
-    return res.status(400).json({
-      success: false,
-      message: 'Invalid login attempt'
+    const token = generateToken(user);
+    res.json({
+      success: true,
+      message: 'Login successful',
+      token,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        role: user.role
+      }
     });
 
   } catch (error) {
@@ -417,112 +363,11 @@ const loginAdmin = async (req, res) => {
   }
 };
 
-// Verify OTP
-const verifyOTP = async (req, res) => {
-  try {
-    const { verificationId, otp } = req.body;
-    
-    console.log('=== OTP Verification Attempt ===');
-    console.log('Verification ID:', verificationId);
-    console.log('Submitted OTP:', otp);
-    console.log('Stored Verification Data:', global.verificationStore[verificationId]);
-    
-    // Check if verification ID exists
-    if (!global.verificationStore || !global.verificationStore[verificationId]) {
-      return res.status(400).json({ message: 'Invalid verification ID' });
-    }
-
-    const verification = global.verificationStore[verificationId];
-
-    // Check if OTP matches
-    if (verification.otp !== otp) {
-      return res.status(400).json({ message: 'Invalid OTP' });
-    }
-
-    // Check if OTP is expired (5 minutes)
-    if (Date.now() - verification.createdAt > 5 * 60 * 1000) {
-      delete global.verificationStore[verificationId];
-      return res.status(400).json({ message: 'OTP expired' });
-    }
-
-    let user;
-    if (verification.isLogin) {
-      // Login flow
-      user = await User.findOne({ phoneNumber: verification.phoneNumber });
-    } else {
-      // Registration flow
-      user = new User(verification.userData);
-      await user.save();
-    }
-
-    // Generate token
-    const token = generateToken(user);
-
-    // Clean up verification store
-    delete global.verificationStore[verificationId];
-
-    res.json({
-      token,
-      user: {
-        id: user._id,
-        name: user.name,
-        phoneNumber: user.phoneNumber,
-        role: user.role
-      }
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// Get All OTPs (Admin Only)
-const getAllOTPs = async (req, res) => {
-  try {
-    // Verify if the requester is an admin
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied. Admin only route.'
-      });
-    }
-
-    // Get all verification data from the store
-    const verificationData = global.verificationStore || {};
-    
-    // Transform the data for better readability
-    const formattedData = Object.entries(verificationData).map(([verificationId, data]) => ({
-      verificationId,
-      otp: data.otp,
-      isLogin: data.isLogin,
-      createdAt: new Date(data.createdAt),
-      phoneNumber: data.phoneNumber || (data.userData && data.userData.phoneNumber),
-      email: data.userData?.email,
-      name: data.userData?.name,
-      expiresAt: new Date(data.createdAt + (5 * 60 * 1000)) // 5 minutes from creation
-    }));
-
-    res.json({
-      success: true,
-      count: formattedData.length,
-      data: formattedData
-    });
-  } catch (error) {
-    console.error('Get All OTPs Error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'An error occurred while fetching OTPs',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
-    });
-  }
-};
-
 module.exports = {
   registerUser,
   registerHospital,
   registerAdmin,
   loginUser,
   loginHospital,
-  loginAdmin,
-  verifyOTP,
-  getAllOTPs
+  loginAdmin
 };
